@@ -1,0 +1,7 @@
+// @filename: settings.json
+{
+    "repo": "TypeScript",
+    "dry": false,
+    "debug": false
+}
+
