@@ -21,6 +21,7 @@ export default function OdysseyPage() {
 
       <main className="flex-grow flex items-center justify-center">
         <h2 className="text-4xl font-bold text-gray-800">Welcome to Odyssey</h2>
+        <img src = "https://images.stockcake.com/public/a/1/c/a1c8be96-d939-49cc-b1e6-c30df655bfa2_large/turbulent-ocean-waves-stockcake.jpg"></img>
       </main>
     </div>
   );
