@@ -3,6 +3,8 @@
 import { useState, useEffect } from "react";
 import Image from "next/image";
 import Link from "next/link";
+import { homedir } from "os";
+import home from 'home.jpg';
 
 export default function OdysseyPage() {
   const [tags, setTags] = useState<string[]>([]);
@@ -63,9 +65,9 @@ export default function OdysseyPage() {
       <div className="fixed top-0 left-0 w-full flex justify-between items-center p-4 bg-black bg-opacity-50 z-50">
         <div className="text-white text-2xl font-bold">ODYSSEY</div>
         <nav className="flex gap-4 text-white">
-          <Link href="/narask">narask</Link>
-          <Link href="/narpit">narpit</Link>
-          <Link href="/nartech">nartech</Link>
+          <Link href="/narask">NARASK</Link>
+          <Link href="/narpit">NARPIT</Link>
+          <Link href="/nartech">NARTECH</Link>
           <a href="https://manta-scouting-neptune.vercel.app" target="_blank" rel="noopener noreferrer">narstrat</a>
         </nav>
       </div>
@@ -88,7 +90,7 @@ export default function OdysseyPage() {
           <p className="num">3</p>
           <h4>NARASK</h4>
         </Link>
-        <Link href="/narpit" className="project_item bg-[#081e51]">
+        <Link href="/NARPIT" className="project_item bg-[#081e51]">
           <p className="num">1</p>
           <h4>NARPIT</h4>
         </Link>
