@@ -11,10 +11,9 @@ export default function OdysseyPage() {
   const [results, setResults] = useState<any[]>([]);
   const [query, setQuery] = useState("");
 
-  // Fake example dataset (replace with your real data)
   const data = [
-    { content: "Common Resource", link: "/narask", summary: "Go to Narask", category: "common", value: 0, keys: ["common", "narask"] },
-    { content: "Tech Docs", link: "/nartech", summary: "Explore Nartech", category: "practicals", value: 0, keys: ["tech", "nartech"] },
+    { content: "Common Resource", link: "/NARASK", summary: "Go to Narask", category: "common", value: 0, keys: ["common", "narask"] },
+    { content: "Tech Docs", link: "/NARTECH", summary: "Explore Nartech", category: "practicals", value: 0, keys: ["tech", "nartech"] },
   ];
 
   useEffect(() => {
@@ -61,18 +60,16 @@ export default function OdysseyPage() {
 
   return (
     <div className="h-screen w-full overflow-y-scroll snap-y snap-mandatory">
-      {/* Navbar */}
       <div className="fixed top-0 left-0 w-full flex justify-between items-center p-4 bg-black bg-opacity-50 z-50">
         <div className="text-white text-2xl font-bold">ODYSSEY</div>
         <nav className="flex gap-4 text-white">
-          <Link href="/narask">NARASK</Link>
-          <Link href="/narpit">NARPIT</Link>
+          <Link href="/NARASK">NARASK</Link>
+          <Link href="/NARPIT">NARPIT</Link>
           <Link href="/nartech">NARTECH</Link>
-          <a href="https://manta-scouting-neptune.vercel.app" target="_blank" rel="noopener noreferrer">narstrat</a>
+          <a href="https://manta-scouting-neptune.vercel.app" target="_blank" rel="noopener noreferrer">STRAT</a>
         </nav>
       </div>
 
-      {/* Cover Section */}
       <section className="relative flex flex-col justify-center items-center h-screen w-full snap-start bg-cover bg-center" style={{ backgroundImage: "url(/img/home.jpg)" }}>
         <div className="flex flex-col items-center justify-center text-center text-white z-10">
           <h1 className="text-8xl tracking-widest">ODYSSEY</h1>
@@ -84,7 +81,6 @@ export default function OdysseyPage() {
         <div className="absolute bottom-0 left-0 w-full h-40 bg-gradient-to-t from-black to-transparent"></div>
       </section>
 
-      {/* Project Menu */}
       <section id="project_menu" className="flex w-full h-screen snap-start">
         <Link href="/NARASK" className="project_item bg-[#08173a]">
           <p className="num">3</p>
@@ -104,8 +100,7 @@ export default function OdysseyPage() {
         </a>
       </section>
 
-      {/* Search Section */}
-      <section className="p-8 bg-black text-white min-h-screen">
+       <section className="p-8 bg-black text-white min-h-screen">
         <input
           type="text"
           placeholder="Search..."
