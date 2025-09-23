@@ -20,17 +20,35 @@ type Section = {
 
 type SectionsMap = Record<string, Section[]>;
 
-const mdFiles: MdFile[] = [
-  { name: "Common", slug: "common", path: "/md_files/common.md" },
-  { name: "Practicals", slug: "practicals", path: "/md_files/practicals.md" },
-  { name: "Github", slug: "github", path: "/md_files/github.md" },
-  { name: "Other", slug: "other", path: "/md_files/other.md" },
-];
 const howToFile = { name: "How To Add Docs", slug: "howto", path: "/md_files/howto.md" };
 
+function Highlight({ text, query }: { text: string; query: string }) {
+  if (!query) return <>{text}</>;
+
+  const escapedQuery = query.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const regex = new RegExp(`(${escapedQuery})`, "gi"); // 'i' = case-insensitive
+  const parts = text.split(regex);
+
+  return (
+    <>
+      {parts.map((part, i) =>
+        regex.test(part) ? (
+          <mark key={i} className="bg-yellow-300 text-black px-0.5 rounded">
+            {part}
+          </mark>
+        ) : (
+          part
+        )
+      )}
+    </>
+  );
+}
+
+
 export default function NaraskPage() {
-  const [search, setSearch] = useState("");
+  const [mdFiles, setMdFiles] = useState<MdFile[]>([]);
   const [sections, setSections] = useState<SectionsMap>({});
+  const [search, setSearch] = useState("");
   const [menuOpen, setMenuOpen] = useState(false);
   const [openDropdown, setOpenDropdown] = useState<string | null>(null);
   const [activeFilter, setActiveFilter] = useState<string | null>(null);
@@ -49,27 +67,46 @@ export default function NaraskPage() {
 
   const sidebarRef = useRef<HTMLDivElement>(null);
 
-  // Load markdown files
+  // Load markdown file list
   useEffect(() => {
-    async function loadFiles() {
+    const loadMdFiles = async () => {
+      try {
+        const res = await fetch("/api/listDocs");
+        const data = await res.json();
+        if (data.success) setMdFiles(data.files);
+      } catch (err) {
+        console.error("Failed to load md files:", err);
+      }
+    };
+    loadMdFiles();
+  }, []);
+
+  // Load sections whenever mdFiles changes
+  useEffect(() => {
+    const loadSections = async () => {
       const sectionMap: SectionsMap = {};
       for (const file of mdFiles) {
-        const res = await fetch(file.path);
-        const text = await res.text();
+        try {
+          const res = await fetch(file.path);
+          const text = await res.text();
 
-        const rawSections = text.split(/^##\s+/m).slice(1);
-        sectionMap[file.slug] = rawSections.map((section) => {
-          const lines = section.split("\n");
-          const heading = lines[0].trim();
-          const fullText = lines.slice(1).join("\n").trim();
-          const preview = lines.slice(1, 5).join(" ").trim();
-          return { heading, preview, fullText };
-        });
+          const rawSections = text.split(/^##\s+/m).slice(1);
+          sectionMap[file.slug] = rawSections.map((section) => {
+            const lines = section.split("\n");
+            const heading = lines[0].trim();
+            const fullText = lines.slice(1).join("\n").trim();
+            const preview = lines.slice(1, 5).join(" ").trim();
+            return { heading, preview, fullText };
+          });
+        } catch (err) {
+          console.error(`Failed to load ${file.name}:`, err);
+        }
       }
       setSections(sectionMap);
-    }
-    loadFiles();
-  }, []);
+    };
+
+    if (mdFiles.length) loadSections();
+  }, [mdFiles]);
 
   // Load howto.md dynamically
   useEffect(() => {
@@ -97,13 +134,30 @@ export default function NaraskPage() {
   }, [menuOpen]);
 
   const markdownComponents = {
-    h1: (props: any) => <h1 className="text-3xl font-bold mt-6 mb-4" {...props} />,
-    h2: (props: any) => <h2 className="text-2xl font-semibold mt-5 mb-3" {...props} />,
-    h3: (props: any) => <h3 className="text-xl font-semibold mt-4 mb-2" {...props} />,
-    p: (props: any) => <p className="mb-3 text-gray-200 leading-relaxed" {...props} />,
+    h1: ({ children }: any) => (
+      <h1 className="text-3xl font-bold mt-6 mb-4">
+        {typeof children === "string" ? <Highlight text={children} query={search} /> : children}
+      </h1>
+    ),
+    h2: ({ children }: any) => (
+      <h2 className="text-2xl font-semibold mt-5 mb-3">
+        {typeof children === "string" ? <Highlight text={children} query={search} /> : children}
+      </h2>
+    ),
+    h3: ({ children }: any) => (
+      <h3 className="text-xl font-semibold mt-4 mb-2">
+        {typeof children === "string" ? <Highlight text={children} query={search} /> : children}
+      </h3>
+    ),
+    p: ({ children }: any) => (
+      <p className="mb-3 text-gray-200 leading-relaxed">
+        {typeof children === "string" ? <Highlight text={children} query={search} /> : children}
+      </p>
+    ),
     ul: (props: any) => <ul className="list-disc list-inside mb-3 space-y-1" {...props} />,
     ol: (props: any) => <ol className="list-decimal list-inside mb-3 space-y-1" {...props} />,
-    li: (props: any) => <li className="ml-4" {...props} />,
+    li: (props: any) => <li className="ml-4" {...props} />,  
+  
     code: ({ className, children, ...props }: any) => {
       const isBlock = className?.includes("language-") || String(children).includes("\n");
       if (isBlock) {
@@ -186,6 +240,11 @@ export default function NaraskPage() {
         setNewDocTitle("");
         setNewDocContent("");
         setSelectedFile("");
+
+        // reload file list so sidebar + tabs update
+        const refresh = await fetch("/api/listDocs");
+        const data = await refresh.json();
+        if (data.success) setMdFiles(data.files);
       } else {
         alert(result.error || "Failed to save documentation");
       }
@@ -195,8 +254,6 @@ export default function NaraskPage() {
     }
   };
 
-
-  
   return (
     <div className="min-h-screen relative bg-black p-8 text-white">
       {/* Header */}
@@ -363,7 +420,25 @@ export default function NaraskPage() {
           <div key={file.slug} className="mb-4">
             <button
               className="flex items-center justify-between w-full text-left font-semibold py-2 hover:text-blue-400"
-              onClick={() => setOpenDropdown(openDropdown === file.slug ? null : file.slug)}
+              onClick={() => {
+                setActiveFilter(file.slug);
+              
+                setExpandedFiles((prev) => {
+                  const newSet = new Set(prev);
+                  newSet.add(file.slug);
+                  return newSet;
+                });
+              
+                setOpenDropdown(openDropdown === file.slug ? null : file.slug);
+              
+                setTimeout(() => {
+                  document.getElementById(file.slug)?.scrollIntoView({
+                    behavior: "smooth",
+                    block: "start",
+                  });
+                }, 300);
+              }}
+              
             >
               {file.name}
               {openDropdown === file.slug ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
@@ -379,29 +454,38 @@ export default function NaraskPage() {
                 >
                   {sections[file.slug].map((sec, idx) => (
                     <li
-                      key={idx}
-                      className="cursor-pointer hover:text-blue-400"
-                      onClick={() => {
-                        setExpandedFiles((prev) => {
-                          const newSet = new Set(prev);
-                          newSet.add(file.slug);
-                          return newSet;
+                    key={idx}
+                    className="cursor-pointer hover:text-blue-400"
+                    onClick={() => {
+                      const sectionId = `${file.slug}-section-${idx}`;
+                  
+                      // switch to the file tab if not already there
+                      setActiveFilter(file.slug);
+                  
+                      setExpandedFiles((prev) => {
+                        const newSet = new Set(prev);
+                        newSet.add(file.slug);
+                        return newSet;
+                      });
+                  
+                      setExpandedSections((prev) => {
+                        const newSet = new Set(prev);
+                        newSet.add(sectionId);
+                        return newSet;
+                      });
+                  
+                      // wait a bit so React renders the right file tab before scrolling
+                      setTimeout(() => {
+                        document.getElementById(sectionId)?.scrollIntoView({
+                          behavior: "smooth",
+                          block: "start",
                         });
-
-                        const sectionId = `${file.slug}-section-${idx}`;
-                        setExpandedSections((prev) => {
-                          const newSet = new Set(prev);
-                          newSet.add(sectionId);
-                          return newSet;
-                        });
-
-                        setTimeout(() => {
-                          document.getElementById(sectionId)?.scrollIntoView({ behavior: "smooth", block: "start" });
-                        }, 300);
-                      }}
-                    >
-                      {sec.heading}
-                    </li>
+                      }, 300);
+                    }}
+                  >
+                    {sec.heading}
+                  </li>
+                  
                   ))}
                 </motion.ul>
               )}
@@ -453,113 +537,164 @@ export default function NaraskPage() {
                     <motion.div
                       key={fileId}
                       id={fileId}
-                      className="border rounded-lg shadow bg-gray-800 cursor-pointer hover:shadow-[0_0_30px_10px_rgba(59,130,246,0.4)] transition-all duration-300"
-                      onClick={() => {
-                        const newSet = new Set(expandedFiles);
-                        if (fileOpen) newSet.delete(fileId);
-                        else newSet.add(fileId);
-                        setExpandedFiles(newSet);
-                      }}
+                      initial={{ opacity: 0, y: 10 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      className="bg-gray-800 p-5 rounded-2xl shadow-lg border border-gray-700"
                     >
-                      <div className="p-6 relative">
-                        <h2 className="text-2xl font-semibold mb-2">{item.file.name}</h2>
-                        <motion.div
-                          className="absolute top-4 right-4 text-gray-400"
-                          animate={{ rotate: fileOpen ? 180 : 0 }}
-                          transition={{ duration: 0.2 }}
-                        >
-                          <ChevronDown className="w-5 h-5" />
-                        </motion.div>
+                      <button
+                        className="flex items-center justify-between w-full text-left font-semibold text-lg"
+                        onClick={() => {
+                          setExpandedFiles((prev) => {
+                            const newSet = new Set(prev);
+                            if (newSet.has(fileId)) newSet.delete(fileId);
+                            else newSet.add(fileId);
+                            return newSet;
+                          });
 
-                        {fileOpen ? (
-                          <div className="flex flex-col gap-4">
-                            {sections[item.file.slug]?.map((section, idx) => {
-                              const sectionId = `${item.file.slug}-section-${idx}`;
-                              const sectionOpen = expandedSections.has(sectionId);
+                          setTimeout(() => {
+                            document.getElementById(fileId)?.scrollIntoView({ behavior: "smooth", block: "start" });
+                          }, 100);
+                        }}
+                      >
+                        {item.file.name}
+                        {fileOpen ? <ChevronDown className="w-5 h-5" /> : <ChevronRight className="w-5 h-5" />}
+                      </button>
+
+                      <AnimatePresence>
+                        {fileOpen && sections[fileId] && (
+                          <motion.div
+                            initial={{ height: 0, opacity: 0 }}
+                            animate={{ height: "auto", opacity: 1 }}
+                            exit={{ height: 0, opacity: 0 }}
+                            transition={{ duration: 0.3 }}
+                            className="mt-4 space-y-4"
+                          >
+                            {sections[fileId].map((sec, idx) => {
+                              const sectionId = `${fileId}-section-${idx}`;
+                              const secOpen = expandedSections.has(sectionId);
 
                               return (
                                 <motion.div
                                   key={sectionId}
                                   id={sectionId}
-                                  className="border border-gray-700 p-4 rounded-lg bg-gray-700 cursor-pointer hover:shadow-[0_0_10px_2px_rgba(59,130,246,0.4)] transition-all duration-300 relative"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    const newSet = new Set(expandedSections);
-                                    if (sectionOpen) newSet.delete(sectionId);
-                                    else newSet.add(sectionId);
-                                    setExpandedSections(newSet);
-                                  }}
+                                  initial={{ opacity: 0, y: 5 }}
+                                  animate={{ opacity: 1, y: 0 }}
+                                  className="bg-gray-700 p-4 rounded-xl shadow border border-gray-600"
                                 >
-                                  <h3 className="text-xl font-semibold mb-2">{section.heading}</h3>
-                                  <motion.div
-                                    className="absolute top-4 right-4 text-gray-400"
-                                    animate={{ rotate: sectionOpen ? 180 : 0 }}
-                                    transition={{ duration: 0.2 }}
+                                  <button
+                                    className="flex items-center justify-between w-full text-left"
+                                    onClick={() => {
+                                      setExpandedSections((prev) => {
+                                        const newSet = new Set(prev);
+                                        if (newSet.has(sectionId)) newSet.delete(sectionId);
+                                        else newSet.add(sectionId);
+                                        return newSet;
+                                      });
+
+                                      setTimeout(() => {
+                                        document.getElementById(sectionId)?.scrollIntoView({
+                                          behavior: "smooth",
+                                          block: "start",
+                                        });
+                                      }, 100);
+                                    }}
                                   >
-                                    <ChevronDown className="w-5 h-5" />
-                                  </motion.div>
-                                  <div className="prose prose-invert max-w-none prose-headings:text-white prose-p:text-gray-200 prose-li:text-gray-200">
-                                    {sectionOpen ? (
-                                      <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
-                                        {section.fullText}
-                                      </ReactMarkdown>
-                                    ) : (
-                                      <p className="text-gray-300">{section.preview}...</p>
+                                    <span className="font-medium">{sec.heading}</span>
+                                    {secOpen ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
+                                  </button>
+
+                                  <AnimatePresence>
+                                    {secOpen && (
+                                      <motion.div
+                                        initial={{ height: 0, opacity: 0 }}
+                                        animate={{ height: "auto", opacity: 1 }}
+                                        exit={{ height: 0, opacity: 0 }}
+                                        transition={{ duration: 0.3 }}
+                                        className="mt-3"
+                                      >
+                                        <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
+                                          {sec.fullText}
+                                        </ReactMarkdown>
+                                      </motion.div>
                                     )}
-                                  </div>
+                                  </AnimatePresence>
                                 </motion.div>
                               );
                             })}
-                          </div>
-                        ) : (
-                          <p className="text-gray-400">
-                            Click to view {sections[item.file.slug]?.length || 0} sections
-                          </p>
+                          </motion.div>
                         )}
-                      </div>
+                      </AnimatePresence>
                     </motion.div>
                   );
-                } else {
-                  const sectionId = `${item.file.slug}-${item.idx}`;
-                  const sectionOpen = expandedSections.has(sectionId);
+                } else if (item.type === "section") {
+                  const fileId = item.file.slug;
+                  const sectionId = `${fileId}-section-${item.idx}`;
+                  const secOpen = expandedSections.has(sectionId);
+                
                   return (
                     <motion.div
                       key={sectionId}
                       id={sectionId}
-                      className="border rounded-lg shadow bg-gray-800 cursor-pointer hover:shadow-[0_0_7px_3px_rgba(59,130,246,0.4)] transition-all duration-300"
-                      onClick={() => {
-                        const newSet = new Set(expandedSections);
-                        if (sectionOpen) newSet.delete(sectionId);
-                        else newSet.add(sectionId);
-                        setExpandedSections(newSet);
-                      }}
+                      initial={{ opacity: 0, y: 10 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      className="bg-gray-800 p-6 rounded-2xl shadow-lg border border-gray-700"
                     >
-                      <div className="p-6 relative">
-                        <h2 className="text-2xl font-semibold mb-2">{item.section?.heading}</h2>
-                        <motion.div
-                          className="absolute top-4 right-4 text-gray-400"
-                          animate={{ rotate: sectionOpen ? 180 : 0 }}
-                          transition={{ duration: 0.2 }}
-                        >
-                          <ChevronDown className="w-5 h-5" />
-                        </motion.div>
-                        <div className="prose prose-invert max-w-none prose-headings:text-white prose-p:text-gray-200 prose-li:text-gray-200">
-                          {sectionOpen ? (
+                      {/* Parent File Name */}
+                      <div className="text-sm text-gray-400 mb-2">
+                        In file: <span className="font-semibold">{item.file.name}</span>
+                      </div>
+                
+                      {/* Section Heading */}
+                      <button
+                        className="flex items-center justify-between w-full text-left font-medium"
+                        onClick={() => {
+                          setExpandedSections((prev) => {
+                            const newSet = new Set(prev);
+                            if (newSet.has(sectionId)) newSet.delete(sectionId);
+                            else newSet.add(sectionId);
+                            return newSet;
+                          });
+                
+                          setTimeout(() => {
+                            document.getElementById(sectionId)?.scrollIntoView({
+                              behavior: "smooth",
+                              block: "start",
+                            });
+                          }, 100);
+                        }}
+                      >
+                        <span className="text-lg">
+                          <Highlight text={item.section?.heading || ""} query={search} />
+                        </span>
+                        {secOpen ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
+                      </button>
+                
+                      {/* Section Content */}
+                      <AnimatePresence>
+                        {secOpen && (
+                          <motion.div
+                            initial={{ height: 0, opacity: 0 }}
+                            animate={{ height: "auto", opacity: 1 }}
+                            exit={{ height: 0, opacity: 0 }}
+                            transition={{ duration: 0.3 }}
+                            className="mt-3"
+                          >
                             <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
                               {item.section?.fullText || ""}
                             </ReactMarkdown>
-                          ) : (
-                            <p>{item.section?.preview}...</p>
-                          )}
-                        </div>
-                      </div>
+                          </motion.div>
+                        )}
+                      </AnimatePresence>
                     </motion.div>
                   );
                 }
+                
+                
+                return null;
               })}
             </div>
           ) : (
-            <p className="text-gray-500">No results found.</p>
+            <p className="text-gray-400">No results found.</p>
           )}
         </div>
       </div>
