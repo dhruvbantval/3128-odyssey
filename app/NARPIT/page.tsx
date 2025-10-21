@@ -92,40 +92,51 @@ export default function NARPitDashboard() {
   const [expandedBattery, setExpandedBattery] = useState<string | null>(null);
   const [batteryFilter, setBatteryFilter] = useState('all');
   
-  const [liveUpdateManager] = useState(() => ({
-    intervals: new Map(),
-    isLive: false,
+  const [liveUpdateManager] = useState(() => {
+    const intervals = new Map();
+    let isLive = false;
     
-    startLiveUpdates: function(callbacks: any, eventKey: string, teamNumber: string, intervalMs = 5000) {
-      this.isLive = true;
+    return {
+      intervals,
+      isLive,
       
-      Object.entries(callbacks).forEach(([name, callback]: [string, any]) => {
-        const interval = setInterval(async () => {
-          if (this.isLive) {
-            try {
-              await callback(eventKey, teamNumber);
-            } catch (error) {
-              console.error(`Update error for ${name}:`, error);
-            }
-          }
-        }, intervalMs);
+      startLiveUpdates: function(callbacks: any, eventKey: string, teamNumber: string, intervalMs = 5000) {
+        isLive = true;
         
-        this.intervals.set(name, interval);
-      });
-    },
-    
-    stopLiveUpdates: function() {
-      this.isLive = false;
-      this.intervals.forEach((interval) => {
-        clearInterval(interval);
-      });
-      this.intervals.clear();
-    }
-  }));
+        // Clear any existing intervals first
+        intervals.forEach((interval) => {
+          clearInterval(interval);
+        });
+        intervals.clear();
+        
+        Object.entries(callbacks).forEach(([name, callback]: [string, any]) => {
+          const interval = setInterval(async () => {
+            if (isLive) {
+              try {
+                await callback(eventKey, teamNumber);
+              } catch (error) {
+                console.error(`Update error for ${name}:`, error);
+              }
+            }
+          }, intervalMs);
+          
+          intervals.set(name, interval);
+        });
+      },
+      
+      stopLiveUpdates: function() {
+        isLive = false;
+        intervals.forEach((interval) => {
+          clearInterval(interval);
+        });
+        intervals.clear();
+      }
+    };
+  });
 
   const addBatteryRecord = async (batteryData: any) => {
     try {
-      const response = await fetch('/api/battery', {
+      const response = await fetch('/api/docs/battery', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ ...batteryData, timestamp: Date.now() })
@@ -140,7 +151,7 @@ export default function NARPitDashboard() {
 
   const getBatteryRecords = async () => {
     try {
-      const response = await fetch('/api/battery');
+      const response = await fetch('/api/docs/battery');
       if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
       return await response.json();
     } catch (error) {
@@ -244,34 +255,60 @@ export default function NARPitDashboard() {
     }
     
     let totalScore = 0;
+    let autoScore = 0;
+    let teleopScore = 0;
+    let endgameScore = 0;
     let validMatches = 0;
     
     teamMatches.forEach((match: any) => {
       if (match.alliances) {
         const isRed = match.alliances.red?.team_keys?.some((key: string) => key.includes(teamNumber));
-        const score = isRed ? match.alliances.red?.score : match.alliances.blue?.score;
+        const matchScore = isRed ? match.alliances.red?.score : match.alliances.blue?.score;
         
-        if (score !== null && score !== undefined) {
-          totalScore += score / 3;
+        if (matchScore !== null && matchScore !== undefined && matchScore > 0) {
+          totalScore += matchScore / 3; // Divide by 3 for alliance average
+          
+          // Try to extract detailed scores from breakdown if available
+          if (match.score_breakdown) {
+            const breakdown = isRed ? match.score_breakdown.red : match.score_breakdown.blue;
+            if (breakdown) {
+              autoScore += (breakdown.autoPoints || 0) / 3;
+              teleopScore += (breakdown.teleopPoints || 0) / 3;
+              endgameScore += (breakdown.endgamePoints || 0) / 3;
+            } else {
+              // Fallback: estimate based on total score
+              autoScore += (matchScore * 0.3) / 3;
+              teleopScore += (matchScore * 0.5) / 3;
+              endgameScore += (matchScore * 0.2) / 3;
+            }
+          } else {
+            // Fallback: estimate based on total score
+            autoScore += (matchScore * 0.3) / 3;
+            teleopScore += (matchScore * 0.5) / 3;
+            endgameScore += (matchScore * 0.2) / 3;
+          }
+          
           validMatches++;
         }
       }
     });
     
-    const avgScore = validMatches > 0 ? (totalScore / validMatches) : 0;
+    if (validMatches === 0) {
+      return { overall: '0.00', auto: '0.00', teleop: '0.00', endgame: '0.00', source: 'local' as const };
+    }
     
     return {
-      overall: avgScore.toFixed(2),
-      auto: (avgScore * 0.3).toFixed(2),
-      teleop: (avgScore * 0.5).toFixed(2),
-      endgame: (avgScore * 0.2).toFixed(2),
+      overall: (totalScore / validMatches).toFixed(2),
+      auto: (autoScore / validMatches).toFixed(2),
+      teleop: (teleopScore / validMatches).toFixed(2),
+      endgame: (endgameScore / validMatches).toFixed(2),
       source: 'local' as const
     };
   };
 
   const fetchLiveStreamUrl = async (eventKey: string) => {
     try {
-      const response = await fetch(`https://www.thebluealliance.com/api/v3/event/${eventKey}/webcast`);
+      const response = await fetch(`/api/stream?eventKey=${eventKey}`);
       if (response.ok) {
         const data = await response.json();
         if (data && data.length > 0) {
@@ -311,22 +348,33 @@ export default function NARPitDashboard() {
   };
 
   const analyzeBatteryHealth = (batteryRecords: BatteryRecord[], batteryId: string) => {
-    const records = batteryRecords.filter(r => r.batteryId === batteryId).sort((a, b) => a.timestamp - b.timestamp);
+    if (!batteryRecords || !Array.isArray(batteryRecords) || !batteryId) {
+      return { health: 'unknown', warnings: ['Invalid data'] };
+    }
+
+    const records = batteryRecords.filter(r => r && r.batteryId === batteryId).sort((a, b) => a.timestamp - b.timestamp);
     
-    if (records.length < 2) return { health: 'unknown', warnings: [] };
+    if (records.length < 1) return { health: 'unknown', warnings: ['No data available'] };
     
-    const recent = records.slice(-3);
     const latest = records[records.length - 1];
+    if (!latest) return { health: 'unknown', warnings: ['Invalid record'] };
     
     let health = 'good';
     let warnings: string[] = [];
     
+    // Check voltage
     if (latest.voltage < 11.8) warnings.push('Low voltage');
-    if (latest.temperature > 45) warnings.push('High temperature');
+    else if (latest.voltage < 12.0) warnings.push('Voltage declining');
     
+    // Check temperature
+    if (latest.temperature > 50) warnings.push('High temperature');
+    else if (latest.temperature > 45) warnings.push('Temperature rising');
+    
+    // Check data freshness
     const hoursAgo = (Date.now() - latest.timestamp) / (1000 * 60 * 60);
     if (hoursAgo > 2) warnings.push('Data outdated');
     
+    // Determine health status
     if (warnings.length > 1) health = 'critical';
     else if (warnings.length > 0) health = 'warning';
     
@@ -468,6 +516,31 @@ export default function NARPitDashboard() {
     }
   };
 
+  const handleUpdateBatteryStatus = async (batteryId: string, status: string, notes: string) => {
+    if (!batteryId || !status) {
+      console.error('Missing required parameters for battery status update');
+      return;
+    }
+
+    try {
+      const response = await fetch('/api/docs/battery/status', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ batteryId, status, notes, timestamp: Date.now() })
+      });
+      
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(`HTTP error! status: ${response.status} - ${errorData.error || 'Unknown error'}`);
+      }
+      
+      await refreshBatteryData();
+    } catch (error) {
+      console.error('Error updating battery status:', error);
+      alert(`Failed to update battery status: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  };
+
   const handleStartCompetition = () => {
     if (!isSetupComplete) {
       alert('Please enter both Competition Key and Team Number');
@@ -484,28 +557,33 @@ export default function NARPitDashboard() {
       setIsLive(false);
     } else {
       const updateCallbacks = {
-        matches: async () => {
+        matches: async (eventKey: string, teamNumber: string) => {
           const data = await fetchEventMatches(eventKey);
           setMatches(data || []);
         },
-        rankings: async () => {
+        rankings: async (eventKey: string, teamNumber: string) => {
           const data = await fetchEventRankings(eventKey);
           setRankings(data?.rankings || []);
         },
-        liveData: async () => {
+        liveData: async (eventKey: string, teamNumber: string) => {
           const data = await fetchLiveEventData(eventKey);
           setLiveEventData(data);
         },
-        teamEPA: async () => {
+        teamEPA: async (eventKey: string, teamNumber: string) => {
           const teamMatches = await fetchTeamMatches(eventKey, teamNumber);
           if (teamMatches) {
             const epaData = await calculateEnhancedEPA(teamNumber, eventKey, teamMatches);
             setTeamEPA(epaData);
           }
         },
-        statbotics: async () => {
+        statbotics: async (eventKey: string, teamNumber: string) => {
           const data = await fetchStatboticsTeamData(teamNumber);
           setStatboticsData(data);
+        },
+        battery: async (eventKey: string, teamNumber: string) => {
+          const data = await getBatteryRecords();
+          setBatteryData(data || []);
+          setBatteryStats(getBatteryUsageStats(data || []));
         }
       };
       
@@ -911,7 +989,25 @@ export default function NARPitDashboard() {
         {activeTab === 'battery' && (
           <div className="space-y-6">
             <div className="bg-gradient-to-br from-slate-800 to-blue-900 rounded-2xl shadow-2xl p-6 border-2 border-cyan-500/30">
-              <h2 className="text-2xl font-bold mb-4 text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 to-blue-500">Add Battery Record</h2>
+              <div className="flex justify-between items-center mb-4">
+                <h2 className="text-2xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 to-blue-500">Add Battery Record</h2>
+                <div className="text-sm text-cyan-300 bg-slate-900/50 rounded-lg px-3 py-2">
+                  <span className="font-semibold">Quick Status:</span>
+                  <select 
+                    onChange={(e) => {
+                      if (e.target.value && newBattery.batteryId) {
+                        handleUpdateBatteryStatus(newBattery.batteryId, e.target.value, 'Quick status update');
+                      }
+                    }}
+                    className="ml-2 bg-slate-800 border border-cyan-600 rounded px-2 py-1 text-white"
+                  >
+                    <option value="">Select Status</option>
+                    <option value="charging">Charging</option>
+                    <option value="discharging">Discharging</option>
+                    <option value="idle">Idle</option>
+                  </select>
+                </div>
+              </div>
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
                 <input
                   type="text"
@@ -979,7 +1075,7 @@ export default function NARPitDashboard() {
               </div>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
               <div className="bg-gradient-to-br from-slate-800 to-green-900 p-6 rounded-2xl shadow-2xl border-2 border-green-500/30">
                 <h3 className="font-bold mb-2 flex items-center gap-2 text-green-400 text-lg">
                   <Battery size={24} />
@@ -988,6 +1084,17 @@ export default function NARPitDashboard() {
                 <div className="text-4xl font-bold text-white">
                   {Object.keys(batteryStats).length}
                 </div>
+                <div className="text-sm text-green-300 mt-1">Total tracked</div>
+              </div>
+              <div className="bg-gradient-to-br from-slate-800 to-blue-900 p-6 rounded-2xl shadow-2xl border-2 border-blue-500/30">
+                <h3 className="font-bold mb-2 flex items-center gap-2 text-blue-400 text-lg">
+                  <Activity size={24} />
+                  Good Health
+                </h3>
+                <div className="text-4xl font-bold text-white">
+                  {Object.values(batteryStats).filter((s: any) => s.status === 'good').length}
+                </div>
+                <div className="text-sm text-blue-300 mt-1">Optimal condition</div>
               </div>
               <div className="bg-gradient-to-br from-slate-800 to-yellow-900 p-6 rounded-2xl shadow-2xl border-2 border-yellow-500/30">
                 <h3 className="font-bold mb-2 flex items-center gap-2 text-yellow-400 text-lg">
@@ -997,6 +1104,7 @@ export default function NARPitDashboard() {
                 <div className="text-4xl font-bold text-white">
                   {Object.values(batteryStats).filter((s: any) => s.status === 'warning').length}
                 </div>
+                <div className="text-sm text-yellow-300 mt-1">Needs attention</div>
               </div>
               <div className="bg-gradient-to-br from-slate-800 to-red-900 p-6 rounded-2xl shadow-2xl border-2 border-red-500/30">
                 <h3 className="font-bold mb-2 flex items-center gap-2 text-red-400 text-lg">
@@ -1006,6 +1114,7 @@ export default function NARPitDashboard() {
                 <div className="text-4xl font-bold text-white">
                   {Object.values(batteryStats).filter((s: any) => s.status === 'critical').length}
                 </div>
+                <div className="text-sm text-red-300 mt-1">Immediate action</div>
               </div>
             </div>
 
@@ -1060,13 +1169,24 @@ export default function NARPitDashboard() {
                             {battery.temperature}°C
                           </td>
                           <td className="px-6 py-4 whitespace-nowrap">
-                            <span className={`px-3 py-1 text-xs rounded-full font-bold ${
-                              battery.status === 'charging' ? 'bg-green-500 text-white' :
-                              battery.status === 'discharging' ? 'bg-red-500 text-white' :
-                              'bg-gray-500 text-white'
-                            }`}>
-                              {battery.status}
-                            </span>
+                            <div className="flex items-center gap-2">
+                              <span className={`px-3 py-1 text-xs rounded-full font-bold ${
+                                battery.status === 'charging' ? 'bg-green-500 text-white' :
+                                battery.status === 'discharging' ? 'bg-red-500 text-white' :
+                                'bg-gray-500 text-white'
+                              }`}>
+                                {battery.status}
+                              </span>
+                              <select
+                                onChange={(e) => handleUpdateBatteryStatus(battery.batteryId, e.target.value, battery.notes || '')}
+                                value={battery.status}
+                                className="text-xs bg-slate-800 border border-cyan-600 rounded px-2 py-1 text-white"
+                              >
+                                <option value="idle">Idle</option>
+                                <option value="charging">Charging</option>
+                                <option value="discharging">Discharging</option>
+                              </select>
+                            </div>
                           </td>
                           <td className="px-6 py-4 whitespace-nowrap text-sm text-cyan-300 font-medium">
                             {battery.location || '-'}

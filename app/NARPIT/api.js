@@ -1,7 +1,7 @@
 // Battery tracking functions
 export async function addBatteryRecord(batteryData) {
     try {
-        const response = await fetch('/api/battery', {
+        const response = await fetch('/api/docs/battery', {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
@@ -25,7 +25,7 @@ export async function addBatteryRecord(batteryData) {
 
 export async function getBatteryRecords() {
     try {
-        const response = await fetch('/api/battery');
+        const response = await fetch('/api/docs/battery');
         
         if (!response.ok) {
             throw new Error(`HTTP error! status: ${response.status}`);
@@ -40,7 +40,7 @@ export async function getBatteryRecords() {
 
 export async function updateBatteryStatus(batteryId, status, notes) {
     try {
-        const response = await fetch('/api/battery/status', {
+        const response = await fetch('/api/docs/battery/status', {
             method: 'PATCH',
             headers: {
                 'Content-Type': 'application/json',
