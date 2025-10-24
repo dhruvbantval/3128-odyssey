@@ -1,28 +1,12 @@
 "use client";
 
 import { useEffect, useState, useRef } from "react";
-import { Menu, ChevronDown, ChevronRight, Plus } from "lucide-react";
+import { Menu, ChevronDown, ChevronRight, Copy, Plus } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import dynamic from "next/dynamic";
-import RichTextEditor from "./RichTextEditor";
+import { Document, Page } from "react-pdf";
 
-// Dynamically import react-pdf to avoid SSR crash
-const { pdfjs } = require("react-pdf");
-pdfjs.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjs.version}/pdf.worker.js`;
-
-const Document = dynamic(
-  () => import("react-pdf").then((mod) => mod.Document),
-  { ssr: false }
-);
-
-const Page = dynamic(
-  () => import("react-pdf").then((mod) => mod.Page),
-  { ssr: false }
-);
-
-// --- TYPES ---
 type MdFile = {
   name: string;
   slug: string;
@@ -42,13 +26,7 @@ type PdfFile = {
   url: string;
 };
 
-type BarketingSection = {
-  id: string;
-  title: string;
-  content: string;
-};
-
-// --- HIGHLIGHT COMPONENT ---
+// highlight component
 const Highlight = ({ text, query }: { text: string; query: string }) => {
   if (!query) return <>{text}</>;
   const parts = text.split(new RegExp(`(${query})`, "gi"));
@@ -67,12 +45,9 @@ const Highlight = ({ text, query }: { text: string; query: string }) => {
   );
 };
 
-// --- MAIN PAGE ---
 export default function NaraskPage() {
   // --- TABS ---
-  const [activeTab, setActiveTab] = useState<"software" | "barketing" | "wiki">(
-    "software"
-  );
+  const [activeTab, setActiveTab] = useState<"software" | "barketing">("software");
 
   // --- SOFTWARE STATE ---
   const [mdFiles, setMdFiles] = useState<MdFile[]>([]);
@@ -82,9 +57,7 @@ export default function NaraskPage() {
   const [openDropdown, setOpenDropdown] = useState<string | null>(null);
   const [activeFilter, setActiveFilter] = useState<string | null>(null);
   const [expandedFiles, setExpandedFiles] = useState<Set<string>>(new Set());
-  const [expandedSections, setExpandedSections] = useState<Set<string>>(
-    new Set()
-  );
+  const [expandedSections, setExpandedSections] = useState<Set<string>>(new Set());
   const [addDocOpen, setAddDocOpen] = useState(false);
   const [showHowTo, setShowHowTo] = useState(false);
   const [howToInstructions, setHowToInstructions] = useState<string>("");
@@ -95,26 +68,48 @@ export default function NaraskPage() {
   const [selectedFile, setSelectedFile] = useState<string>("");
 
   const sidebarRef = useRef<HTMLDivElement>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
-
-  const howToFile: MdFile = {
-    name: "How To Add Docs",
-    slug: "howto",
-    path: "/md_files/howto.md",
-  };
+  const howToFile = { name: "How To Add Docs", slug: "howto", path: "/md_files/howto.md" };
 
   // --- BARKETING STATE ---
   const [pdfFiles, setPdfFiles] = useState<PdfFile[]>([]);
   const [selectedPdf, setSelectedPdf] = useState<PdfFile | null>(null);
-  const [showUploadModal, setShowUploadModal] = useState(false);
-  const [pdfDropFile, setPdfDropFile] = useState<File | null>(null);
 
-  // --- WIKI STATE ---
-  const [wikiSections, setWikiSections] = useState<BarketingSection[]>([]);
-  const [activeSectionId, setActiveSectionId] = useState<string | null>(null);
+  // --- LOAD PDFs ---
+  useEffect(() => {
+    const loadPdfs = async () => {
+      try {
+        const res = await fetch("/api/barketing/listPdfs");
+        const data = await res.json();
+        if (data.success) setPdfFiles(data.files);
+      } catch (err) {
+        console.error("Failed to load PDFs:", err);
+      }
+    };
+    loadPdfs();
+  }, []);
 
-  // --- EFFECTS ---
-  // Load Markdown Files
+  const handleUploadPdf = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (!e.target.files?.length) return;
+    const formData = new FormData();
+    formData.append("file", e.target.files[0]);
+    try {
+      const res = await fetch("/api/barketing/uploadPdf", { method: "POST", body: formData });
+      const result = await res.json();
+      if (result.success) {
+        alert("PDF uploaded!");
+        const refresh = await fetch("/api/barketing/listPdfs");
+        const data = await refresh.json();
+        if (data.success) setPdfFiles(data.files);
+      } else {
+        alert("Upload failed: " + result.error);
+      }
+    } catch (err) {
+      console.error(err);
+      alert("Upload failed.");
+    }
+  };
+
+  // --- LOAD MARKDOWN FILES ---
   useEffect(() => {
     const loadMdFiles = async () => {
       try {
@@ -152,9 +147,8 @@ export default function NaraskPage() {
     if (mdFiles.length) loadSections();
   }, [mdFiles]);
 
-  // Load HowTo
   useEffect(() => {
-    const loadHowTo = async () => {
+    async function loadHowTo() {
       try {
         const res = await fetch(howToFile.path);
         const text = await res.text();
@@ -162,32 +156,13 @@ export default function NaraskPage() {
       } catch (err) {
         console.error("Failed to load howto.md:", err);
       }
-    };
+    }
     loadHowTo();
   }, []);
 
-  // Load PDFs
-  useEffect(() => {
-    const loadPdfs = async () => {
-      try {
-        const res = await fetch("/api/barketing/listPdfs");
-        const data = await res.json();
-        if (data.success) setPdfFiles(data.files || []);
-      } catch (err) {
-        console.error("Failed to load PDFs:", err);
-      }
-    };
-    loadPdfs();
-  }, []);
-
-  // Close menu on outside click
   useEffect(() => {
     function handleClickOutside(e: MouseEvent) {
-      if (
-        menuOpen &&
-        sidebarRef.current &&
-        !sidebarRef.current.contains(e.target as Node)
-      ) {
+      if (menuOpen && sidebarRef.current && !sidebarRef.current.contains(e.target as Node)) {
         setMenuOpen(false);
       }
     }
@@ -195,38 +170,46 @@ export default function NaraskPage() {
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, [menuOpen]);
 
-  // --- HELPERS ---
-  const uploadPdfFile = async (file: File) => {
-    const formData = new FormData();
-    formData.append("file", file);
-
-    try {
-      const res = await fetch("/api/barketing/uploadPdf", {
-        method: "POST",
-        body: formData,
-      });
-      const result = await res.json();
-
-      if (result.success) {
-        alert("PDF uploaded!");
-        setPdfFiles((prev) => [
-          ...prev,
-          { name: result.filename, url: `/barketing_pdfs/${result.filename}` },
-        ]);
-        setShowUploadModal(false);
-        setPdfDropFile(null);
-      } else {
-        alert("Upload failed: " + result.error);
-      }
-    } catch (err) {
-      console.error(err);
-      alert("Upload failed.");
-    }
+  const markdownComponents = {
+    h1: ({ children }: any) => <h1 className="text-3xl font-bold mt-6 mb-4">{children}</h1>,
+    h2: ({ children }: any) => <h2 className="text-2xl font-semibold mt-5 mb-3">{children}</h2>,
+    h3: ({ children }: any) => <h3 className="text-xl font-semibold mt-4 mb-2">{children}</h3>,
+    p: ({ children }: any) => <p className="mb-3 text-gray-200 leading-relaxed">{children}</p>,
+    ul: (props: any) => <ul className="list-disc list-inside mb-3 space-y-1" {...props} />,
+    ol: (props: any) => <ol className="list-decimal list-inside mb-3 space-y-1" {...props} />,
+    li: (props: any) => <li className="ml-4" {...props} />,
+    code: ({ className, children, ...props }: any) => (
+      <pre className="bg-gray-800 p-4 rounded-lg overflow-x-auto text-sm">
+        <code {...props} className={className}>
+          {children}
+        </code>
+      </pre>
+    ),
   };
 
+  // --- Build Display Cards ---
+  let displayCards: { type: "file" | "section"; file: MdFile; section?: Section; idx?: number }[] = [];
+  if (search.trim() === "" && !activeFilter) {
+    displayCards = mdFiles.map((file) => ({ type: "file", file }));
+  } else {
+    mdFiles.forEach((file) => {
+      if (sections[file.slug]) {
+        sections[file.slug].forEach((section, idx) => {
+          const query = search.toLowerCase();
+          const matches =
+            section.heading.toLowerCase().includes(query) ||
+            section.preview.toLowerCase().includes(query) ||
+            section.fullText.toLowerCase().includes(query);
+          if ((!activeFilter || activeFilter === file.slug) && (search.trim() === "" || matches)) {
+            displayCards.push({ type: "section", file, section, idx });
+          }
+        });
+      }
+    });
+  }
+
   const handleSaveDoc = async () => {
-    if (mode === "new" && !newDocTitle.trim())
-      return alert("Enter a filename.");
+    if (mode === "new" && !newDocTitle.trim()) return alert("Enter a filename.");
     if (mode === "append" && !selectedFile) return alert("Select a file to append.");
     if (!newDocContent.trim()) return alert("Content cannot be empty.");
 
@@ -254,82 +237,45 @@ export default function NaraskPage() {
       alert("Error saving documentation");
     }
   };
-  // --- SAVE WIKI SECTIONS ---
-const handleSaveWiki = async () => {
-  try {
-    const res = await fetch("/api/wiki", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ sections: wikiSections }),
-    });
-    const result = await res.json();
-    if (result.success) {
-      alert("Wiki sections saved!");
-    } else {
-      alert(result.error || "Failed to save wiki sections");
-    }
-  } catch (err) {
-    console.error(err);
-    alert("Error saving wiki sections");
-  }
-};
 
-
-  const markdownComponents = {
-    h1: ({ children }: any) => <h1 className="text-3xl font-bold mt-6 mb-4">{children}</h1>,
-    h2: ({ children }: any) => <h2 className="text-2xl font-semibold mt-5 mb-3">{children}</h2>,
-    h3: ({ children }: any) => <h3 className="text-xl font-semibold mt-4 mb-2">{children}</h3>,
-    p: ({ children }: any) => <p className="mb-3 text-gray-200 leading-relaxed">{children}</p>,
-    ul: (props: any) => <ul className="list-disc list-inside mb-3 space-y-1" {...props} />,
-    ol: (props: any) => <ol className="list-decimal list-inside mb-3 space-y-1" {...props} />,
-    li: (props: any) => <li className="ml-4" {...props} />,
-    code: ({ className, children, ...props }: any) => (
-      <pre className="bg-gray-800 p-4 rounded-lg overflow-x-auto text-sm">
-        <code {...props} className={className}>
-          {children}
-        </code>
-      </pre>
-    ),
-  };
-
-  // --- BUILD DISPLAY CARDS ---
-  let displayCards: { type: "file" | "section"; file: MdFile; section?: Section; idx?: number }[] = [];
-  if (search.trim() === "" && !activeFilter) {
-    displayCards = mdFiles.map((file) => ({ type: "file", file }));
-  } else {
-    mdFiles.forEach((file) => {
-      if (sections[file.slug]) {
-        sections[file.slug].forEach((section, idx) => {
-          const query = search.toLowerCase();
-          const matches =
-            section.heading.toLowerCase().includes(query) ||
-            section.preview.toLowerCase().includes(query) ||
-            section.fullText.toLowerCase().includes(query);
-          if ((!activeFilter || activeFilter === file.slug) && (search.trim() === "" || matches)) {
-            displayCards.push({ type: "section", file, section, idx });
-          }
-        });
-      }
-    });
-  }
-
-  // --- RENDER ---
   return (
     <div className="min-h-screen relative bg-black p-8 text-white">
-      {/* HEADER + TABS */}
+      {/* Header */}
       <header className="flex flex-col items-center gap-6 mb-8 relative">
         <button onClick={() => setMenuOpen(!menuOpen)} className="absolute left-0 top-0 p-2">
           <Menu className="w-7 h-7" />
         </button>
+
+        {/* Tabs */}
         <div className="flex">
-          <button onClick={() => setActiveTab("software")} className={`px-6 py-2 bg-black relative ${activeTab === "software" ? "after:block after:absolute after:-bottom-1 after:left-0 after:w-full after:h-1 after:bg-white" : ""}`}>Software</button>
-          <button onClick={() => setActiveTab("barketing")} className={`px-6 py-2 bg-black relative ${activeTab === "barketing" ? "after:block after:absolute after:-bottom-1 after:left-0 after:w-full after:h-1 after:bg-white" : ""}`}>Barketing</button>
-          <button onClick={() => setActiveTab("wiki")} className={`px-6 py-2 bg-black relative ${activeTab === "wiki" ? "after:block after:absolute after:-bottom-1 after:left-0 after:w-full after:h-1 after:bg-white" : ""}`}>Wiki</button>
+          <button
+            onClick={() => setActiveTab("software")}
+            className={`px-6 py-2 bg-black relative ${
+              activeTab === "software"
+                ? "after:block after:absolute after:-bottom-1 after:left-0 after:w-full after:h-1 after:bg-white"
+                : ""
+            }`}
+          >
+            Software
+          </button>
+          <button
+            onClick={() => setActiveTab("barketing")}
+            className={`px-6 py-2 bg-black relative ${
+              activeTab === "barketing"
+                ? "after:block after:absolute after:-bottom-1 after:left-0 after:w-full after:h-1 after:bg-white"
+                : ""
+            }`}
+          >
+            Barketing
+          </button>
         </div>
 
         <h1 className="text-4xl font-bold text-center">NARASK</h1>
 
-        <button onClick={() => setAddDocOpen(true)} className="absolute right-0 top-0 flex items-center gap-2 bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded-full font-semibold shadow-lg transition">
+        <button
+          onClick={() => setAddDocOpen(true)}
+          className="absolute right-0 top-0 flex items-center gap-2 bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded-full font-semibold shadow-lg transition"
+        >
           <Plus size={18} /> Add Documentation
         </button>
 
@@ -343,7 +289,8 @@ const handleSaveWiki = async () => {
           />
         </div>
       </header>
-{/* SOFTWARE SECTION */}
+
+      {/* SOFTWARE SECTION */}
       {activeTab === "software" && (
         <>
           {/* Add Documentation Modal */}
@@ -608,227 +555,39 @@ const handleSaveWiki = async () => {
 </div>
 
         </>
-)}
+      )}
 
-{/* --- BARKETING TAB --- */}
-{activeTab === "barketing" && (
-  <section className="mt-8">
-    <h2 className="text-3xl font-bold mb-6">Barketing PDFs</h2>
-
-    {/* Upload PDF button */}
-    <button
-      onClick={() => setShowUploadModal(true)}
-      className="mb-4 bg-blue-600 hover:bg-blue-500 px-4 py-2 rounded text-white"
-    >
-      Upload PDF
-    </button>
-
-    {/* PDF List */}
-    <div className="space-y-3 max-h-64 overflow-y-auto">
-      {pdfFiles.length ? (
-        pdfFiles.map((pdf) => (
-          <div
-            key={pdf.name}
-            className={`bg-gray-800 p-3 rounded cursor-pointer hover:bg-gray-700 ${
-              selectedPdf?.name === pdf.name ? "border-2 border-blue-500" : ""
-            }`}
-            onClick={() => setSelectedPdf(pdf)}
-          >
-            {pdf.name}
+      {/* BARKETING SECTION */}
+      {activeTab === "barketing" && (
+        <section className="mt-8">
+          <h2 className="text-3xl font-bold mb-4">Barketing Documentation</h2>
+          <label className="block mb-4 cursor-pointer">
+            <span className="bg-blue-600 px-4 py-2 rounded">Upload PDF</span>
+            <input type="file" accept="application/pdf" onChange={handleUploadPdf} className="hidden" />
+          </label>
+          <div className="space-y-3">
+            {pdfFiles.map((pdf) => (
+              <div
+                key={pdf.name}
+                className="bg-gray-800 p-3 rounded cursor-pointer hover:bg-gray-700"
+                onClick={() => setSelectedPdf(pdf)}
+              >
+                {pdf.name}
+              </div>
+            ))}
           </div>
-        ))
-      ) : (
-        <p className="text-gray-400">No PDFs uploaded yet.</p>
-      )}
-    </div>
-
-    {/* Display selected PDF */}
-    {selectedPdf && typeof window !== "undefined" && (
-      <div className="mt-6 bg-gray-900 p-4 rounded-xl overflow-auto">
-        <h3 className="text-xl font-semibold mb-2">{selectedPdf.name}</h3>
-        <div className="border border-gray-700 rounded-lg overflow-hidden flex justify-center">
-          <Document
-            file={selectedPdf.url} // relative path from public folder
-            onLoadError={(err) => console.error("PDF load error:", err)}
-            loading={<p>Loading PDF...</p>}
-          >
-            <Page pageNumber={1} width={800} />
-          </Document>
-        </div>
-      </div>
-    )}
-
-    {/* Upload Modal */}
-    <AnimatePresence>
-      {showUploadModal && (
-        <motion.div
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          exit={{ opacity: 0 }}
-          className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50"
-        >
-          <motion.div
-            initial={{ scale: 0.95 }}
-            animate={{ scale: 1 }}
-            exit={{ scale: 0.95 }}
-            className="bg-gray-900 p-6 rounded-lg w-96"
-          >
-            <h3 className="text-xl font-bold mb-4">Upload PDF</h3>
-
-            <div
-              className="border-2 border-dashed border-gray-500 p-8 rounded-lg text-center cursor-pointer hover:border-blue-500"
-              onDragOver={(e) => e.preventDefault()}
-              onDrop={(e) => {
-                e.preventDefault();
-                const file = e.dataTransfer.files[0];
-                if (file && file.type === "application/pdf") {
-                  setPdfDropFile(file);
-                } else {
-                  alert("Only PDF files are allowed!");
-                }
-              }}
-              onClick={() => fileInputRef.current?.click()}
-            >
-              {pdfDropFile ? (
-                <p>Ready to upload: {pdfDropFile.name}</p>
-              ) : (
-                <p>Drag & drop a PDF here, or click to select</p>
-              )}
+          {selectedPdf && (
+            <div className="mt-6 bg-gray-900 p-4 rounded-xl">
+              <h3 className="text-xl font-semibold mb-2">{selectedPdf.name}</h3>
+              <div className="border border-gray-700 rounded-lg overflow-hidden flex justify-center">
+                <Document file={selectedPdf.url}>
+                  <Page pageNumber={1} width={800} />
+                </Document>
+              </div>
             </div>
-
-            <input
-              type="file"
-              ref={fileInputRef}
-              accept="application/pdf"
-              className="hidden"
-              onChange={(e) => e.target.files?.[0] && setPdfDropFile(e.target.files[0])}
-            />
-
-            <div className="flex justify-end mt-4 gap-2">
-              <button
-                onClick={() => {
-                  setShowUploadModal(false);
-                  setPdfDropFile(null);
-                }}
-                className="px-4 py-2 rounded bg-gray-700 hover:bg-gray-600"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={() => {
-                  if (!pdfDropFile) return alert("No PDF selected");
-                  uploadPdfFile(pdfDropFile);
-                }}
-                className="px-4 py-2 rounded bg-blue-600 hover:bg-blue-500 text-white"
-              >
-                Upload
-              </button>
-            </div>
-          </motion.div>
-        </motion.div>
+          )}
+        </section>
       )}
-    </AnimatePresence>
-  </section>
-)}
-
-
-
-{/* WIKI SECTION */}
-{activeTab === "wiki" && (
-  <section className="mt-8">
-    <h2 className="text-3xl font-bold mb-6">Team Wiki</h2>
-
-    <div className="flex gap-6">
-      {/* Sidebar for sections */}
-      <div className="w-64 bg-gray-900 p-4 rounded-lg">
-        <h3 className="text-lg font-bold mb-2">Sections</h3>
-        <div className="flex flex-col gap-2">
-          {wikiSections.map((sec) => (
-            <button
-              key={sec.id}
-              onClick={() => setActiveSectionId(sec.id)}
-              className={`text-left px-3 py-2 rounded ${
-                activeSectionId === sec.id
-                  ? "bg-blue-600 text-white"
-                  : "bg-gray-800 text-gray-200"
-              }`}
-            >
-              {sec.title || "Untitled Section"}
-            </button>
-          ))}
-
-          <button
-            onClick={() => {
-              const newSection = {
-                id: crypto.randomUUID(),
-                title: "New Section",
-                content: "",
-              };
-              setWikiSections([...wikiSections, newSection]);
-              setActiveSectionId(newSection.id);
-            }}
-            className="mt-2 px-3 py-2 rounded bg-green-600 text-white hover:bg-green-500"
-          >
-            + Add Section
-          </button>
-        </div>
-      </div>
-
-      {/* Editor for active section */}
-      <div className="flex-1">
-        {activeSectionId && (
-          <>
-            <input
-              type="text"
-              value={
-                wikiSections.find((s) => s.id === activeSectionId)?.title || ""
-              }
-              onChange={(e) =>
-                setWikiSections((prev) =>
-                  prev.map((s) =>
-                    s.id === activeSectionId
-                      ? { ...s, title: e.target.value }
-                      : s
-                  )
-                )
-              }
-              className="w-full mb-4 p-2 rounded bg-gray-700 text-white"
-              placeholder="Section title"
-            />
-            <RichTextEditor
-              value={
-                wikiSections.find((s) => s.id === activeSectionId)?.content ||
-                ""
-              }
-              onChange={(newContent) =>
-                setWikiSections((prev) =>
-                  prev.map((s) =>
-                    s.id === activeSectionId
-                      ? { ...s, content: newContent }
-                      : s
-                  )
-                )
-              }
-            />
-          </>
-        )}
-
-        <button
-          onClick={handleSaveWiki}
-          className="mt-4 bg-blue-500 hover:bg-blue-600 px-4 py-2 rounded text-white"
-        >
-          Save All Sections
-        </button>
-      </div>
-    </div>
-  </section>
-)}
-
-
-
-
-
-
     </div>
   );
 }
