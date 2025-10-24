@@ -136,7 +136,7 @@ export default function NARPitDashboard() {
 
   const addBatteryRecord = async (batteryData: any) => {
     try {
-      const response = await fetch('/api/docs/battery', {
+      const response = await fetch('/api/battery', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ ...batteryData, timestamp: Date.now() })
@@ -151,7 +151,7 @@ export default function NARPitDashboard() {
 
   const getBatteryRecords = async () => {
     try {
-      const response = await fetch('/api/docs/battery');
+      const response = await fetch('/api/battery');
       if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
       return await response.json();
     } catch (error) {
@@ -523,7 +523,7 @@ export default function NARPitDashboard() {
     }
 
     try {
-      const response = await fetch('/api/docs/battery/status', {
+      const response = await fetch('/api/battery/status', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ batteryId, status, notes, timestamp: Date.now() })

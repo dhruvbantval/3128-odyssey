@@ -1,7 +1,7 @@
 // Battery tracking functions
 export async function addBatteryRecord(batteryData) {
     try {
-        const response = await fetch('/api/docs/battery', {
+        const response = await fetch('/api/battery', {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
@@ -25,7 +25,7 @@ export async function addBatteryRecord(batteryData) {
 
 export async function getBatteryRecords() {
     try {
-        const response = await fetch('/api/docs/battery');
+        const response = await fetch('/api/battery');
         
         if (!response.ok) {
             throw new Error(`HTTP error! status: ${response.status}`);
@@ -40,7 +40,7 @@ export async function getBatteryRecords() {
 
 export async function updateBatteryStatus(batteryId, status, notes) {
     try {
-        const response = await fetch('/api/docs/battery/status', {
+        const response = await fetch('/api/battery/status', {
             method: 'PATCH',
             headers: {
                 'Content-Type': 'application/json',
@@ -270,20 +270,32 @@ function calculateLocalEPA(teamMatches, teamNumber) {
     let validMatches = 0;
     
     teamMatches.forEach(match => {
-        if (match.score_breakdown) {
-            const isRed = match.alliances.red.team_keys.some(key => key.includes(teamNumber));
-            const breakdown = isRed ? match.score_breakdown.red : match.score_breakdown.blue;
+        if (match.alliances) {
+            const isRed = match.alliances.red?.team_keys?.some(key => key.includes(teamNumber));
+            const matchScore = isRed ? match.alliances.red?.score : match.alliances.blue?.score;
             
-            if (breakdown) {
-                // This is simplified - actual EPA calculation is complex
-                // You'll need to implement based on current game scoring
-                const matchAuto = breakdown.autoPoints || 0;
-                const matchTeleop = breakdown.teleopPoints || 0;
-                const matchEndgame = breakdown.endgamePoints || 0;
+            if (matchScore !== null && matchScore !== undefined && matchScore > 0) {
+                totalScore += matchScore / 3; // Divide by 3 for alliance average
                 
-                autoPoints += matchAuto / (isRed ? match.alliances.red.team_keys.length : match.alliances.blue.team_keys.length);
-                teleopPoints += matchTeleop / (isRed ? match.alliances.red.team_keys.length : match.alliances.blue.team_keys.length);
-                endgamePoints += matchEndgame / (isRed ? match.alliances.red.team_keys.length : match.alliances.blue.team_keys.length);
+                // Try to extract detailed scores from breakdown if available
+                if (match.score_breakdown) {
+                    const breakdown = isRed ? match.score_breakdown.red : match.score_breakdown.blue;
+                    if (breakdown) {
+                        autoPoints += (breakdown.autoPoints || 0) / 3;
+                        teleopPoints += (breakdown.teleopPoints || 0) / 3;
+                        endgamePoints += (breakdown.endgamePoints || 0) / 3;
+                    } else {
+                        // Fallback: estimate based on total score
+                        autoPoints += (matchScore * 0.3) / 3;
+                        teleopPoints += (matchScore * 0.5) / 3;
+                        endgamePoints += (matchScore * 0.2) / 3;
+                    }
+                } else {
+                    // Fallback: estimate based on total score
+                    autoPoints += (matchScore * 0.3) / 3;
+                    teleopPoints += (matchScore * 0.5) / 3;
+                    endgamePoints += (matchScore * 0.2) / 3;
+                }
                 
                 validMatches++;
             }
@@ -291,7 +303,7 @@ function calculateLocalEPA(teamMatches, teamNumber) {
     });
     
     return validMatches > 0 ? {
-        overall: ((autoPoints + teleopPoints + endgamePoints) / validMatches).toFixed(2),
+        overall: (totalScore / validMatches).toFixed(2),
         auto: (autoPoints / validMatches).toFixed(2),
         teleop: (teleopPoints / validMatches).toFixed(2),
         endgame: (endgamePoints / validMatches).toFixed(2),
@@ -352,23 +364,31 @@ export async function fetchLiveStreamUrl(eventKey) {
 }
 
 function formatStreamUrl(webcast) {
+    if (!webcast || !webcast.type) {
+        return {
+            type: 'youtube',
+            channel: 'FIRSTINSPIRES',
+            url: 'https://www.youtube.com/embed/live_stream?channel=FIRSTINSPIRES&autoplay=1'
+        };
+    }
+    
     switch (webcast.type) {
         case 'youtube':
             return {
                 type: 'youtube',
-                channel: webcast.channel,
-                url: `https://www.youtube.com/embed/${webcast.channel}/live?autoplay=1`
+                channel: webcast.channel || 'FIRSTINSPIRES',
+                url: `https://www.youtube.com/embed/${webcast.channel || 'FIRSTINSPIRES'}/live?autoplay=1`
             };
         case 'twitch':
             return {
                 type: 'twitch',
-                channel: webcast.channel,
-                url: `https://player.twitch.tv/?channel=${webcast.channel}&parent=${window.location.hostname}&autoplay=true`
+                channel: webcast.channel || 'FIRSTINSPIRES',
+                url: `https://player.twitch.tv/?channel=${webcast.channel || 'FIRSTINSPIRES'}&parent=${typeof window !== 'undefined' ? window.location.hostname : 'localhost'}&autoplay=true`
             };
         default:
             return {
                 type: 'direct',
-                url: webcast.url || webcast.file
+                url: webcast.url || webcast.file || 'https://www.youtube.com/embed/live_stream?channel=FIRSTINSPIRES&autoplay=1'
             };
     }
 }
@@ -385,6 +405,10 @@ export function formatDateTime(timestamp) {
 }
 
 export function getBatteryStatusColor(battery) {
+    if (!battery || typeof battery.timestamp !== 'number') {
+        return 'text-gray-600'; // Unknown status
+    }
+    
     const hoursAgo = (Date.now() - battery.timestamp) / (1000 * 60 * 60);
     
     if (hoursAgo > 2) return 'text-yellow-600'; // Warning - old data
@@ -395,6 +419,10 @@ export function getBatteryStatusColor(battery) {
 }
 
 export function getBatteryStatus(battery) {
+    if (!battery || typeof battery.timestamp !== 'number') {
+        return 'unknown';
+    }
+    
     const hoursAgo = (Date.now() - battery.timestamp) / (1000 * 60 * 60);
     
     if (hoursAgo > 2) return 'warning';
@@ -404,11 +432,15 @@ export function getBatteryStatus(battery) {
 }
 
 export function getBatteryUsageStats(batteryRecords) {
+    if (!batteryRecords || !Array.isArray(batteryRecords)) {
+        return {};
+    }
+    
     const stats = {};
-    const uniqueBatteries = [...new Set(batteryRecords.map(r => r.batteryId))];
+    const uniqueBatteries = [...new Set(batteryRecords.map(r => r && r.batteryId).filter(Boolean))];
     
     uniqueBatteries.forEach(batteryId => {
-        const records = batteryRecords.filter(r => r.batteryId === batteryId).sort((a, b) => a.timestamp - b.timestamp);
+        const records = batteryRecords.filter(r => r && r.batteryId === batteryId).sort((a, b) => a.timestamp - b.timestamp);
         const analysis = analyzeBatteryHealth(batteryRecords, batteryId);
         
         stats[batteryId] = {
@@ -417,9 +449,9 @@ export function getBatteryUsageStats(batteryRecords) {
             lastUsed: records[records.length - 1]?.timestamp || 0,
             status: analysis.health,
             location: records[records.length - 1]?.location || 'Unknown',
-            averageVoltage: analysis.averageVoltage,
-            averageTemp: analysis.averageTemp,
-            warnings: analysis.warnings
+            averageVoltage: analysis.averageVoltage || 0,
+            averageTemp: analysis.averageTemp || 0,
+            warnings: analysis.warnings || []
         };
     });
     
