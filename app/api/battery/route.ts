@@ -58,3 +58,14 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Failed to add battery record' }, { status: 500 });
   }
 }
+
+export async function DELETE() {
+  try {
+    await ensureDataDirectory();
+    await writeBatteryData([]);
+    return NextResponse.json({ success: true, message: 'All battery records cleared' });
+  } catch (error) {
+    console.error('Error clearing battery records:', error);
+    return NextResponse.json({ error: 'Failed to clear battery records' }, { status: 500 });
+  }
+}

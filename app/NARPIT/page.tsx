@@ -95,6 +95,7 @@ export default function NARPitDashboard() {
 
   const [expandedBattery, setExpandedBattery] = useState<string | null>(null);
   const [batteryFilter, setBatteryFilter] = useState('all');
+  const [showClearConfirm, setShowClearConfirm] = useState(false);
   
   const [liveUpdateManager] = useState(() => {
     const intervals = new Map();
@@ -486,6 +487,31 @@ export default function NARPitDashboard() {
       setBatteryStats(getBatteryUsageStats(data || []));
     } catch (error) {
       console.error('Error refreshing battery data:', error);
+    }
+  };
+
+  const clearAllBatteryRecords = async () => {
+    setShowClearConfirm(true);
+  };
+
+  const confirmClearRecords = async () => {
+    try {
+      const response = await fetch('/api/battery', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' }
+      });
+      
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(`HTTP error! status: ${response.status} - ${errorData.error || 'Unknown error'}`);
+      }
+      
+      await refreshBatteryData();
+      setShowClearConfirm(false);
+      alert('All battery records have been cleared successfully.');
+    } catch (error) {
+      console.error('Error clearing battery records:', error);
+      alert(`Failed to clear battery records: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
   };
 
@@ -1013,6 +1039,35 @@ export default function NARPitDashboard() {
 
         {activeTab === 'battery' && (
           <div className="space-y-6">
+            {/* Clear Confirmation Modal */}
+            {showClearConfirm && (
+              <div className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center z-50">
+                <div className="bg-slate-900 p-6 rounded-2xl w-full max-w-md text-white border-2 border-red-500/30">
+                  <div className="text-center">
+                    <AlertCircle className="w-16 h-16 text-red-400 mx-auto mb-4" />
+                    <h3 className="text-2xl font-bold mb-4 text-red-400">Clear All Battery Records</h3>
+                    <p className="text-gray-300 mb-6">
+                      Are you sure you want to delete ALL battery records? This action cannot be undone and will permanently remove all battery tracking data.
+                    </p>
+                    <div className="flex gap-4 justify-center">
+                      <button
+                        onClick={() => setShowClearConfirm(false)}
+                        className="px-6 py-2 bg-gray-600 hover:bg-gray-700 text-white rounded-lg font-semibold transition-all"
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        onClick={confirmClearRecords}
+                        className="px-6 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg font-semibold transition-all"
+                      >
+                        Clear All Records
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
             <div className="bg-gradient-to-br from-slate-800 to-blue-900 rounded-2xl shadow-2xl p-6 border-2 border-cyan-500/30">
               <div className="flex justify-between items-center mb-4">
                 <h2 className="text-2xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 to-blue-500">Add Battery Record</h2>
@@ -1165,13 +1220,22 @@ export default function NARPitDashboard() {
             <div className="bg-gradient-to-br from-slate-800 to-blue-900 rounded-2xl shadow-2xl border-2 border-cyan-500/30">
               <div className="p-6 border-b border-cyan-500/30 flex justify-between items-center">
                 <h2 className="text-2xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 to-blue-500">Battery Records</h2>
-                <button
-                  onClick={refreshBatteryData}
-                  className="flex items-center gap-2 px-4 py-2 bg-cyan-600 hover:bg-cyan-700 text-white rounded-lg font-semibold transition-all transform hover:scale-105"
-                >
-                  <RefreshCw size={16} />
-                  Refresh
-                </button>
+                <div className="flex items-center gap-3">
+                  <button
+                    onClick={refreshBatteryData}
+                    className="flex items-center gap-2 px-4 py-2 bg-cyan-600 hover:bg-cyan-700 text-white rounded-lg font-semibold transition-all transform hover:scale-105"
+                  >
+                    <RefreshCw size={16} />
+                    Refresh
+                  </button>
+                  <button
+                    onClick={clearAllBatteryRecords}
+                    className="flex items-center gap-2 px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg font-semibold transition-all transform hover:scale-105"
+                  >
+                    <AlertCircle size={16} />
+                    Clear All Records
+                  </button>
+                </div>
               </div>
               <div className="overflow-x-auto">
                 <table className="w-full">
