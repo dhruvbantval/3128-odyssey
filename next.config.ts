@@ -18,14 +18,6 @@ const nextConfig: NextConfig = {
       'pdfjs-dist/build/pdf.worker.entry': 'pdfjs-dist/build/pdf.worker.min.js',
     };
 
-    // Add DOMMatrix polyfill
-    config.plugins = config.plugins || [];
-    config.plugins.push(
-      new (require('webpack')).DefinePlugin({
-        'typeof window': JSON.stringify('object'),
-      })
-    );
-
     return config;
   },
 

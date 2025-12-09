@@ -5,8 +5,17 @@ import { Menu, ChevronDown, ChevronRight, Copy, Plus } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { Document, Page } from "react-pdf";
-import "../../lib/dom-polyfills";
+import dynamic from "next/dynamic";
+
+// Dynamically import react-pdf to avoid SSR issues
+const Document = dynamic(
+  () => import("react-pdf").then((mod) => mod.Document),
+  { ssr: false }
+);
+const Page = dynamic(
+  () => import("react-pdf").then((mod) => mod.Page),
+  { ssr: false }
+);
 
 type MdFile = {
   name: string;
