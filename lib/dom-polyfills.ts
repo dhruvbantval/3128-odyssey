@@ -104,13 +104,8 @@ if (typeof global !== 'undefined') {
     } as any;
   }
 
-  // Add to globalThis as well
-  if (!globalThis.DOMMatrix) {
+  // Add to globalThis as well for compatibility
+  if (typeof globalThis !== 'undefined' && !globalThis.DOMMatrix) {
     globalThis.DOMMatrix = global.DOMMatrix;
   }
-}
-
-// Also add to window if available
-if (typeof window !== 'undefined' && !window.DOMMatrix) {
-  (window as any).DOMMatrix = global.DOMMatrix || globalThis.DOMMatrix;
 }
